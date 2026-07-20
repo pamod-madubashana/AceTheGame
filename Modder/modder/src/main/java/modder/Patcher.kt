@@ -289,7 +289,7 @@ class Patcher(
             throw IllegalStateException("Cannot remove extract native lib options when [decodeResource] is false")
         }
         val manifestFile = apktool.manifestFile
-        val manifestContent = Files.readString(manifestFile.toPath())
+        val manifestContent = String(Files.readAllBytes(manifestFile.toPath()), Charsets.UTF_8)
         // remove the options all toget
         val newManifestContent = manifestContent.replace("android:extractNativeLibs=\"false\"", "")
         // warning if nothing is removed
