@@ -78,6 +78,12 @@ jobs:
           name: ModderRelease
           path: Modder/modder/build/distributions/
 
+      - name: upload Modder injection resources
+        uses: actions/upload-artifact@v4
+        with:
+          name: ModderCodeToInject
+          path: Modder/modder/src/main/resources/AceAndroidLib/code_to_inject/
+
   Modder-windows:
     runs-on: windows-2022
     steps:
