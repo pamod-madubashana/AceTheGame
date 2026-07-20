@@ -33,6 +33,7 @@ class Patcher(
         apktool = Apktool(
                 apkFile = apkFilePathStr,
                 decodeResource = decodeResource,
+                useAapt2 = false,
                 // TODO: temporary solution to clean up
                 // in the future should use Closeable.use {}
                 decompilationFolder = TempManager.CreateTempDirectory("ModderDecompiledApk", cleanDecompilationOnExit).toFile(),
