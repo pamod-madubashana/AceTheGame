@@ -303,8 +303,87 @@ class Patcher(
 
     fun Export(exportPath: String) {
         val exportFile = File(exportPath)
-        apktool.export(apkOutFile = exportPath, signApk = false)
+        val decompiledDir = apktool.decompilationFolder!!
+
+        var success = false
+        var attempts = 0
+        val maxAttempts = 5
+
+        while (!success && attempts < maxAttempts) {
+            attempts++
+            try {
+                apktool.export(apkOutFile = exportPath, signApk = false)
+                success = true
+            } catch (e: Exception) {
+                val errMsg = e.toString()
+                if (errMsg.contains("Unsigned short value out of range: 65536") ||
+                    errMsg.contains("65536")) {
+                    println("DEX 64K limit exceeded, attempt $attempts/$maxAttempts")
+                    val smaliFolder = parseSmaliFolderFromError(errMsg, decompiledDir)
+                    if (smaliFolder != null) {
+                        println("Splitting oversized smali folder: ${smaliFolder.name}")
+                        SplitOversizedSmaliFolder(smaliFolder)
+                    } else {
+                        println("Could not identify problematic smali folder, aborting")
+                        throw e
+                    }
+                } else {
+                    throw e
+                }
+            }
+        }
+
+        if (!success) {
+            throw IOException("Failed to rebuild APK after $maxAttempts attempts")
+        }
         System.out.printf("exported to %s\n", exportFile.absolutePath)
+    }
+
+    private fun parseSmaliFolderFromError(errMsg: String, decompiledDir: File): File? {
+        // Try to find smali_classesN pattern in the error
+        val regex = Regex("""smali_classes\d+""")
+        val match = regex.find(errMsg)
+        if (match != null) {
+            val folderName = match.value
+            val folder = File(decompiledDir, folderName)
+            if (folder.exists()) return folder
+        }
+        // If we can't parse the folder name, find the largest smali folder
+        val smaliFolders = decompiledDir.listFiles()
+            ?.filter { it.isDirectory && (it.name == "smali" || it.name.startsWith("smali_classes")) }
+            ?.sortedByDescending { it.walkTopDown().filter { f -> f.isFile && f.name.endsWith(".smali") }.count() }
+        return smaliFolders?.firstOrNull()
+    }
+
+    fun SplitOversizedSmaliFolder(smaliFolder: File) {
+        val smaliFiles = smaliFolder.walkTopDown()
+            .filter { it.isFile && it.name.endsWith(".smali") }
+            .toList()
+
+        if (smaliFiles.isEmpty()) return
+
+        // Find the next available smali_classes index
+        val decompiledDir = smaliFolder.parentFile!!
+        val existingFolders = decompiledDir.listFiles()
+            ?.filter { it.isDirectory && (it.name == "smali" || it.name.startsWith("smali_classes")) }
+            ?.map { it.name } ?: emptyList()
+        val maxIndex = existingFolders.mapNotNull { name ->
+            if (name == "smali") 1
+            else Regex("""smali_classes(\d+)""").find(name)?.groupValues?.get(1)?.toIntOrNull()
+        }.maxOrNull() ?: 1
+
+        val newFolder = File(decompiledDir, "smali_classes${maxIndex + 1}")
+        println("Creating split folder: ${newFolder.name} with ${smaliFiles.size / 2} files")
+
+        // Split files: move second half to new folder, preserving subdirectory structure
+        val splitPoint = smaliFiles.size / 2
+        for (i in splitPoint until smaliFiles.size) {
+            val smaliFile = smaliFiles[i]
+            val relativePath = smaliFolder.toPath().relativize(smaliFile.toPath()).toString()
+            val destFile = File(newFolder, relativePath)
+            destFile.parentFile.mkdirs()
+            smaliFile.renameTo(destFile)
+        }
     }
 
     companion object {
