@@ -309,35 +309,48 @@ class Patcher(
         var attempts = 0
         val maxAttempts = 5
 
+        // Find java executable
+        val javaHome = System.getProperty("java.home")
+        val javaBin = File(javaHome, "bin/java").absolutePath
+
+        // Build classpath from current classloader
+        val classpath = (javaClass.classLoader as? java.net.URLClassLoader)?.urLs
+            ?.joinToString(File.pathSeparator) { it.path }
+            ?: System.getProperty("java.class.path")
+
         while (!success && attempts < maxAttempts) {
             attempts++
-            val cmd = mutableListOf("b", decompiledDir.absolutePath, "--output", exportPath)
+            val cmd = listOf(
+                javaBin, "-cp", classpath,
+                "brut.apktool.Main", "b",
+                decompiledDir.absolutePath,
+                "--output", exportPath
+            )
 
-            val oldErr = System.err
-            val errCapture = java.io.ByteArrayOutputStream()
-            System.setErr(java.io.PrintStream(errCapture))
-            try {
-                brut.apktool.Main.main(cmd.toTypedArray())
-            } finally {
-                System.setErr(oldErr)
-            }
-            val errOutput = errCapture.toString()
+            val process = ProcessBuilder(cmd)
+                .redirectErrorStream(false)
+                .start()
 
-            if (errOutput.contains("Unsigned short value out of range: 65536") ||
-                errOutput.contains("Could not smali folder")) {
+            val stdout = process.inputStream.bufferedReader().readText()
+            val stderr = process.errorStream.bufferedReader().readText()
+            val exitCode = process.waitFor()
+            val combinedOutput = stdout + stderr
+
+            if (combinedOutput.contains("Unsigned short value out of range: 65536") ||
+                combinedOutput.contains("Could not smali folder")) {
                 println("DEX 64K limit exceeded, attempt $attempts/$maxAttempts")
-                val smaliFolder = parseSmaliFolderFromError(errOutput, decompiledDir)
+                val smaliFolder = parseSmaliFolderFromError(combinedOutput, decompiledDir)
                 if (smaliFolder != null) {
                     println("Splitting oversized smali folder: ${smaliFolder.name}")
                     SplitOversizedSmaliFolder(smaliFolder)
                 } else {
                     println("Could not identify problematic smali folder")
-                    System.err.println(errOutput)
+                    System.err.println(combinedOutput)
                     throw IOException("Failed to rebuild APK: DEX 64K limit")
                 }
-            } else if (errOutput.contains("Exception") || errOutput.contains("Error")) {
-                System.err.println(errOutput)
-                throw IOException("Failed to rebuild APK")
+            } else if (exitCode != 0) {
+                System.err.println(combinedOutput)
+                throw IOException("Failed to rebuild APK (exit code $exitCode)")
             } else {
                 success = true
             }
