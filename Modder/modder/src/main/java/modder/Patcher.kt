@@ -311,25 +311,35 @@ class Patcher(
 
         while (!success && attempts < maxAttempts) {
             attempts++
+            val cmd = mutableListOf("b", decompiledDir.absolutePath, "--output", exportPath)
+
+            val oldErr = System.err
+            val errCapture = java.io.ByteArrayOutputStream()
+            System.setErr(java.io.PrintStream(errCapture))
             try {
-                apktool.export(apkOutFile = exportPath, signApk = false)
-                success = true
-            } catch (e: Exception) {
-                val errMsg = e.toString()
-                if (errMsg.contains("Unsigned short value out of range: 65536") ||
-                    errMsg.contains("65536")) {
-                    println("DEX 64K limit exceeded, attempt $attempts/$maxAttempts")
-                    val smaliFolder = parseSmaliFolderFromError(errMsg, decompiledDir)
-                    if (smaliFolder != null) {
-                        println("Splitting oversized smali folder: ${smaliFolder.name}")
-                        SplitOversizedSmaliFolder(smaliFolder)
-                    } else {
-                        println("Could not identify problematic smali folder, aborting")
-                        throw e
-                    }
+                brut.apktool.Main.main(cmd.toTypedArray())
+            } finally {
+                System.setErr(oldErr)
+            }
+            val errOutput = errCapture.toString()
+
+            if (errOutput.contains("Unsigned short value out of range: 65536") ||
+                errOutput.contains("Could not smali folder")) {
+                println("DEX 64K limit exceeded, attempt $attempts/$maxAttempts")
+                val smaliFolder = parseSmaliFolderFromError(errOutput, decompiledDir)
+                if (smaliFolder != null) {
+                    println("Splitting oversized smali folder: ${smaliFolder.name}")
+                    SplitOversizedSmaliFolder(smaliFolder)
                 } else {
-                    throw e
+                    println("Could not identify problematic smali folder")
+                    System.err.println(errOutput)
+                    throw IOException("Failed to rebuild APK: DEX 64K limit")
                 }
+            } else if (errOutput.contains("Exception") || errOutput.contains("Error")) {
+                System.err.println(errOutput)
+                throw IOException("Failed to rebuild APK")
+            } else {
+                success = true
             }
         }
 
