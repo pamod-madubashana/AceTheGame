@@ -435,8 +435,17 @@ class Patcher(
         const val MEM_SCANNER_SMALI_ZIP_NAME = MEM_SCANNER_SMALI_DIR_NAME + ".zip"
         val MEM_SCANNER_SMALI_CODE_ZIP_PATH = java.lang.String.join("/", MEM_SCANNER_SMALI_BASE_DIR, MEM_SCANNER_SMALI_ZIP_NAME)
 
-        // smali code to start the service
-        const val MEM_SCANNER_CONSTRUCTOR_SMALI_CODE = "invoke-static {}, Lcom/AceInjector/utils/Injector;->Init()V"
+        // smali code to start the service (wrapped in try-catch to prevent crash on failure)
+        val MEM_SCANNER_CONSTRUCTOR_SMALI_CODE = """
+            :try_start_0
+            invoke-static {}, Lcom/AceInjector/utils/Injector;->Init()V
+            :try_end_0
+            .catchall {:try_start_0 .. :try_end_0} :catch_0
+            goto :goto_0
+            :catch_0
+            move-exception v0
+            :goto_0
+        """.trimIndent()
 
         fun LaunchableActivityToSmaliRelativePath(launchableActivity: String): String {
 
