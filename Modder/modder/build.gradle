@@ -76,3 +76,19 @@ configurations.all {
         force 'commons-io:commons-io:2.21.0'
     }
 }
+
+tasks.register('copyToolJars', Copy) {
+    from files("./lib/apktool-cli-all_3.0.2.jar", "./lib/uber-apk-signer-1.3.0.jar")
+    into "$buildDir/resources/main/tools"
+}
+
+processResources.dependsOn copyToolJars
+
+tasks.named('installDist') {
+    doLast {
+        copy {
+            from files("./lib/apktool-cli-all_3.0.2.jar", "./lib/uber-apk-signer-1.3.0.jar")
+            into "${destinationDir}/lib"
+        }
+    }
+}

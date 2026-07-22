@@ -1,12 +1,12 @@
 package modder
 
-import apktool.kotlin.lib.ApkSigner
 import org.apache.commons.io.FileUtils
 import org.apache.commons.io.FilenameUtils
 import picocli.CommandLine
 import picocli.CommandLine.Model.CommandSpec
 import picocli.CommandLine.Spec
 import java.io.File
+import java.io.IOException
 import java.util.function.Consumer
 
 @CommandLine.Command(name = "Modder", subcommands = [CommandLine.HelpCommand::class], description = ["Utilities for hacking android apk"])
@@ -18,6 +18,36 @@ class ModderMainCmd {
     fun ShowAdbShellError(out: Adb.Output) {
         println("can't connect to adb shell:")
         out.strings.forEach(Consumer { s: String -> println(s) })
+    }
+
+    /**
+     * Sign an APK file using uber-apk-signer as a subprocess.
+     * This avoids the SecurityException caused by classpath conflict between
+     * apktool-cli-all_3.0.2.jar and uber-apk-signer-1.3.0.jar both bundling
+     * different versions of org.apache.commons.cli with different signatures.
+     */
+    fun SignApk(apkFile: File) {
+        val javaBin = File(System.getProperty("java.home"), "bin/java").absolutePath
+        val signerJar = ToolJarResolver.resolve().signerJar
+
+        logger.info { "Signing ${apkFile.name} via subprocess" }
+        val cmd = listOf(
+            javaBin, "-jar", signerJar,
+            "--apks", apkFile.absolutePath,
+            "--allowResign", "--overwrite"
+        )
+
+        val process = ProcessBuilder(cmd)
+            .redirectErrorStream(true)
+            .start()
+
+        val output = process.inputStream.bufferedReader().readText()
+        val exitCode = process.waitFor()
+
+        if (exitCode != 0) {
+            throw IOException("Failed to sign ${apkFile.name} (exit code $exitCode): $output")
+        }
+        logger.info { "Signed ${apkFile.name} successfully" }
     }
 
     @CommandLine.Command(name = "listApk", description = ["List installed apks"])
@@ -126,7 +156,7 @@ class ModderMainCmd {
         // ============ sign all the apk in the directory ==========
         val files = patchedApkDir.listFiles()
         for (f in files) {
-            if (f.isFile) ApkSigner.sign(f)
+            if (f.isFile) SignApk(f)
         }
         System.out.printf("exported apk to %s\n", patchedApkPath)
     }
@@ -207,7 +237,7 @@ class ModderMainCmd {
             if (FilenameUtils.getExtension(apkFile.absolutePath) == "apk") {
                 println("Signing " + apkFile.absolutePath)
                 Assert.AssertExistAndIsFile(apkFile)
-                ApkSigner.sign(apkFile)
+                SignApk(apkFile)
             }
         }
     }
