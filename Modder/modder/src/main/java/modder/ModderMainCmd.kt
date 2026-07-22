@@ -1,7 +1,5 @@
 package modder
 
-import org.apache.commons.io.FileUtils
-import org.apache.commons.io.FilenameUtils
 import picocli.CommandLine
 import picocli.CommandLine.Model.CommandSpec
 import picocli.CommandLine.Spec
@@ -111,7 +109,7 @@ class ModderMainCmd {
         Assert.AssertExistAndIsDirectory(apkSrcDir)
         // copy apk folder so we don't write to the original one
         val patchedApkDir = File(apkSrcDir.absolutePath + ".patched")
-        FileUtils.copyDirectory(apkSrcDir, patchedApkDir)
+        apkSrcDir.copyRecursively(patchedApkDir, overwrite = true)
         // get the base apk for patching
         val baseApkFile = File(patchedApkDir.absolutePath, Patcher.BASE_APK_FILE_NAME)
         Assert.AssertExistAndIsFile(baseApkFile)
@@ -174,7 +172,7 @@ class ModderMainCmd {
         val downloadFile = File(package_name)
         if (downloadFile.exists() && downloadFile.isDirectory) {
             System.out.printf("directory %s exist, removing it...\n", package_name)
-            FileUtils.deleteDirectory(downloadFile)
+            downloadFile.deleteRecursively()
         }
         // create dir for storing downloaded apk
         File(package_name).mkdirs()
@@ -234,7 +232,7 @@ class ModderMainCmd {
             apkFilePaths: MutableList<File>
     ) {
         for (apkFile in apkFilePaths) {
-            if (FilenameUtils.getExtension(apkFile.absolutePath) == "apk") {
+            if (apkFile.extension == "apk") {
                 println("Signing " + apkFile.absolutePath)
                 Assert.AssertExistAndIsFile(apkFile)
                 SignApk(apkFile)
